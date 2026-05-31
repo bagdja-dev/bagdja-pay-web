@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  let body: { token?: string; paymentMethod?: string };
+  let body: { token?: string; provider?: string; paymentMethod?: string; selectedWalletId?: string };
 
   try {
     body = await request.json();
@@ -20,11 +20,13 @@ export async function POST(request: NextRequest) {
   }
 
   const token = body.token?.trim();
+  const provider = body.provider?.trim(); 
   const paymentMethod = body.paymentMethod?.trim();
+  const selectedWalletId = body.selectedWalletId?.trim();
 
-  if (!token || !paymentMethod) {
+  if (!token || !provider || !paymentMethod) {
     return NextResponse.json(
-      { message: 'token and paymentMethod are required' },
+      { message: 'token, provider, and paymentMethod are required' },
       { status: 400 },
     );
   }
@@ -40,15 +42,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Retrieve user access token from httpOnly cookie
+  const accessToken = request.cookies.get('bagdja_auth_token')?.value;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
   try {
     const initResponse = await fetch(
       `${paymentApiUrl}/payments/public/initialize-payment`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token, paymentMethod }),
+        headers,
+        body: JSON.stringify({ token, provider, paymentMethod, selectedWalletId }),
       },
     );
 
