@@ -94,6 +94,33 @@ const appendInvoiceParam = (url: string, invoice: string) => {
   }
 };
 
+function setAuthCookie(authToken: string) {
+  if (typeof window === 'undefined' || !authToken) return;
+
+  const cookieParts = [`bagdja_auth_token=${encodeURIComponent(authToken)}`, 'path=/', 'SameSite=None', 'max-age=86400'];
+  if (window.location.hostname.endsWith('.bagdja.com')) {
+    cookieParts.push('Domain=.bagdja.com');
+  }
+  if (window.location.protocol === 'https:') {
+    cookieParts.push('Secure');
+  }
+
+  document.cookie = cookieParts.join('; ');
+}
+
+function normalizeAuthQuery(searchParams: URLSearchParams) {
+  const authToken = searchParams.get('auth_token')?.trim() || searchParams.get('token')?.trim();
+  if (!authToken) return null;
+
+  const params = new URLSearchParams(searchParams.toString());
+  params.delete('token');
+  params.delete('auth_token');
+  const baseUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+  window.history.replaceState({}, '', baseUrl);
+
+  return authToken;
+}
+
 function CheckoutClientContent() {
   const searchParams = useSearchParams();
   const lang = getLanguageFromUrl(searchParams);
@@ -184,6 +211,11 @@ function CheckoutClientContent() {
   );
 
   useEffect(() => {
+    const authToken = normalizeAuthQuery(searchParams);
+    if (authToken) {
+      setAuthCookie(authToken);
+    }
+
     if (!token?.trim()) {
       setFatal(t.checkout.invalidLink);
       return;

@@ -19,10 +19,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Retrieve user access token from httpOnly cookie
-  const accessToken = request.cookies.get('bagdja_auth_token')?.value;
+  const authToken =
+    request.cookies.get('bagdja_auth_token')?.value ||
+    request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    new URL(request.url).searchParams.get('auth_token')?.trim();
 
-  if (!accessToken) {
+  if (!authToken) {
     return NextResponse.json(
       { message: 'Authentication required. Please log in to your Bagdja account.' },
       { status: 401 },
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${accessToken}`,
+    'Authorization': `Bearer ${authToken}`,
   };
 
   try {

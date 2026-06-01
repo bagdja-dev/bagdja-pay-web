@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  let body: { token?: string; provider?: string; paymentMethod?: string; selectedWalletId?: string };
+  let body: { token?: string; provider?: string; paymentMethod?: string; selectedWalletId?: string; authToken?: string };
 
   try {
     body = await request.json();
@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
   const provider = body.provider?.trim(); 
   const paymentMethod = body.paymentMethod?.trim();
   const selectedWalletId = body.selectedWalletId?.trim();
+  const authToken =
+    request.cookies.get('bagdja_auth_token')?.value ||
+    request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    body.authToken?.trim();
 
   if (!token || !provider || !paymentMethod) {
     return NextResponse.json(
@@ -42,14 +46,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Retrieve user access token from httpOnly cookie
-  const accessToken = request.cookies.get('bagdja_auth_token')?.value;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
   }
 
   try {
