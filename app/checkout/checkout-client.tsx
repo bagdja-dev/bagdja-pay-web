@@ -45,6 +45,8 @@ type CheckoutSession = {
   selectedPaymentMethod?: string | null;
   adminFeeAmount?: number | null;
   totalAmount?: number | null;
+  orgId?: string | null;
+  appId?: string | null;
 };
 
 type InitializePaymentResponse = {
@@ -295,7 +297,13 @@ function CheckoutClientContent() {
           return;
         }
 
-        const methodsRes = await fetch(`${base}/payments/payment-methods`);
+        const methodsQuery = new URLSearchParams();
+        if (session.orgId) methodsQuery.set('orgId', session.orgId);
+        if (session.appId) methodsQuery.set('appId', session.appId);
+        const methodsQueryString = methodsQuery.toString();
+        const methodsRes = await fetch(
+          `${base}/payments/payment-methods${methodsQueryString ? `?${methodsQueryString}` : ''}`,
+        );
         const methodsText = await methodsRes.text();
         if (!methodsRes.ok) {
           let detail = methodsText;
