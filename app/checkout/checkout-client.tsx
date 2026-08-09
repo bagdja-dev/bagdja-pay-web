@@ -326,6 +326,12 @@ function CheckoutClientContent() {
           checkoutSession.successRedirectUrl,
           checkoutSession.failureRedirectUrl,
         );
+      } else if (payload.redirectUrl) {
+        // Case for redirect-based providers (e.g. Duitku): the buyer still has
+        // to complete payment on the provider's own page — this is NOT a
+        // completed payment yet, unlike the internal-wallet branch below.
+        setMessage(t.checkout.openingPaymentWindow);
+        window.location.href = payload.redirectUrl;
       } else {
         // Case for Internal Wallet: payment is already complete, redirect to success
         setMessage(t.checkout.paymentSuccess);
