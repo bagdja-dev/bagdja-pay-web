@@ -58,6 +58,39 @@ type InitializePaymentResponse = {
   providerData?: Record<string, unknown>;
 };
 
+// Duitku's `method` values are their own short channel codes (BC, SP, etc.),
+// not human-readable slugs like Midtrans's ('bank_transfer') — map them to a
+// friendly label for display. Keep in sync with DUITKU_PAYMENT_METHODS in
+// bagdja-console's PaymentFeeModal.tsx (that's where these rows get created).
+const DUITKU_METHOD_LABELS: Record<string, string> = {
+  BC: 'BCA Virtual Account',
+  M2: 'Mandiri Virtual Account',
+  BT: 'Permata Virtual Account',
+  B1: 'CIMB Niaga Virtual Account',
+  VA: 'Maybank Virtual Account',
+  I1: 'BNI Virtual Account',
+  A1: 'ATM Bersama Virtual Account',
+  OV: 'OVO',
+  DA: 'DANA',
+  SP: 'ShopeePay / QRIS',
+  VC: 'Credit Card',
+  FT: 'Retail (Indomaret/Alfamart)',
+};
+
+function getMethodLabel(method: PaymentMethodDto): string {
+  if (method.provider === 'duitku') {
+    return DUITKU_METHOD_LABELS[method.method] ?? method.method;
+  }
+  return method.method.replaceAll('_', ' ').toUpperCase();
+}
+
+function getProviderLabel(provider: string): string {
+  if (provider === 'duitku') return 'Duitku';
+  if (provider === 'midtrans') return 'Midtrans';
+  if (provider === 'internal-wallet') return 'Bagdja Wallet';
+  return provider.replaceAll('_', ' ');
+}
+
 function loadSnapScript(clientKey: string, isProduction: boolean, errorMsg: string): Promise<void> {
   const src = isProduction
     ? 'https://app.midtrans.com/snap/snap.js'
@@ -540,16 +573,11 @@ function CheckoutClientContent() {
                           border: selectedMethod?.id === method.id ? '1px solid #e5a044' : '1px solid rgba(224, 226, 229, 0.12)',
                           cursor: 'pointer',
                           transition: 'all 0.2s ease',
-                          ':hover': {
-                            backgroundColor: selectedMethod?.id === method.id ? 'rgba(229, 160, 68, 0.15)' : '#242930',
-                            transform: 'translateY(-1px)',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                          },
                         }}
                       >
                         <span style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                          <strong style={{ color: '#e0e2e5', fontSize: '0.9rem' }}>{method.method.replaceAll('_', ' ').toUpperCase()}</strong>
-                          <div style={{ fontSize: '0.75rem', color: '#8896a4' }}>{method.provider.replaceAll('_', ' ')}</div>
+                          <strong style={{ color: '#e0e2e5', fontSize: '0.9rem' }}>{getMethodLabel(method)}</strong>
+                          <div style={{ fontSize: '0.75rem', color: '#8896a4' }}>{getProviderLabel(method.provider)}</div>
                         </span>
                         <input
                           type="radio"
@@ -586,36 +614,29 @@ function CheckoutClientContent() {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={handlePayClick}
-                disabled={!selectedMethod || isProcessing || !!fatal}
-                style={{
-                  marginTop: '0.25rem',
-                  width: '100%',
-                  padding: '0.95rem 1.1rem',
-                  borderRadius: 14,
-                  border: 'none',
-                  cursor: selectedMethod && !isProcessing && !fatal ? 'pointer' : 'not-allowed',
-                  backgroundColor: selectedMethod && !isProcessing && !fatal ? '#e5a044' : '#5c7e9a',
-                  color: selectedMethod && !isProcessing && !fatal ? '#111' : '#e0e2e5',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  transition: 'all 0.2s ease',
-                  boxShadow: selectedMethod && !isProcessing && !fatal ? '0 6px 20px rgba(229, 160, 68, 0.3)' : 'none',
-                  ':hover': {
-                    backgroundColor: selectedMethod && !isProcessing && !fatal ? '#d69135' : '#5c7e9a',
-                    transform: selectedMethod && !isProcessing && !fatal ? 'translateY(-2px)' : 'none',
-                    boxShadow: selectedMethod && !isProcessing && !fatal ? '0 10px 28px rgba(229, 160, 68, 0.4)' : 'none',
-                  },
-                  ':active': {
-                    transform: selectedMethod && !isProcessing && !fatal ? 'translateY(0)' : 'none',
-                    boxShadow: selectedMethod && !isProcessing && !fatal ? '0 3px 14px rgba(229, 160, 68, 0.25)' : 'none',
-                  },
-                }}
-              >
-                {isProcessing ? t.checkout.processing : `${t.checkout.payWith} ${selectedMethod?.provider.replaceAll('_', ' ').toUpperCase()}`}
-              </button>
+              {selectedMethod && (
+                <button
+                  type="button"
+                  onClick={handlePayClick}
+                  disabled={isProcessing || !!fatal}
+                  style={{
+                    marginTop: '0.25rem',
+                    width: '100%',
+                    padding: '0.95rem 1.1rem',
+                    borderRadius: 14,
+                    border: 'none',
+                    cursor: !isProcessing && !fatal ? 'pointer' : 'not-allowed',
+                    backgroundColor: !isProcessing && !fatal ? '#e5a044' : '#5c7e9a',
+                    color: !isProcessing && !fatal ? '#111' : '#e0e2e5',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: !isProcessing && !fatal ? '0 6px 20px rgba(229, 160, 68, 0.3)' : 'none',
+                  }}
+                >
+                  {isProcessing ? t.checkout.processing : `${t.checkout.payWith} ${getMethodLabel(selectedMethod)}`}
+                </button>
+              )}
             </div>
           )}
 
