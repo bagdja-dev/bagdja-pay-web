@@ -51,6 +51,7 @@ type CheckoutSession = {
 
 type InitializePaymentResponse = {
   success: boolean;
+  message?: string;
   snapToken?: string;
   redirectUrl?: string;
   adminFee: number;
@@ -353,7 +354,7 @@ function CheckoutClientContent() {
 
       const payload: InitializePaymentResponse = await res.json();
       if (!res.ok) {
-        throw new Error(payload.snapToken || res.statusText || t.checkout.failedInitializePayment);
+        throw new Error(payload.message || res.statusText || t.checkout.failedInitializePayment);
       }
 
       if (payload.snapToken) {
@@ -450,7 +451,7 @@ function CheckoutClientContent() {
 
       const payload: InitializePaymentResponse = await res.json();
       if (!res.ok) {
-        throw new Error(payload.snapToken || res.statusText || t.checkout.failedInitializePayment);
+        throw new Error(payload.message || res.statusText || t.checkout.failedInitializePayment);
       }
 
       setInternalLoading(false);
@@ -952,4 +953,3 @@ export function CheckoutClient() {
     </Suspense>
   );
 }
-
