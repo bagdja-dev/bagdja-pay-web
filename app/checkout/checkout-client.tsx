@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { getLanguageFromUrl, getTranslations } from '../../src/lib/translations';
 import { LanguageSwitcher } from '../../src/components/LanguageSwitcher';
+import { format, payFetch } from '../../src/lib/pay-api';
+import { PinInput } from '../../src/components/pay/ui';
 
 declare global {
   interface Window {
@@ -158,6 +160,18 @@ function normalizeAuthQuery(searchParams: URLSearchParams) {
   return authToken;
 }
 
+/** Anggota org dengan grant (D18): batas per transaksi & sisa bulanan. */
+function isOverMemberLimit(
+  wallet: { access?: string; perTransactionLimit?: number | null; monthlyRemaining?: number | null },
+  total: number,
+): boolean {
+  if (wallet.access !== 'member') return false;
+  return (
+    (wallet.perTransactionLimit != null && total > wallet.perTransactionLimit) ||
+    (wallet.monthlyRemaining != null && total > wallet.monthlyRemaining)
+  );
+}
+
 function CheckoutClientContent() {
   const searchParams = useSearchParams();
   const lang = getLanguageFromUrl(searchParams);
@@ -180,6 +194,9 @@ function CheckoutClientContent() {
   const [internalLoading, setInternalLoading] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [internalSuccess, setInternalSuccess] = useState(false);
+  // PIN wallet pembeli (D14/D19): wajib saat WALLET_PIN_ENFORCED aktif di payment-service.
+  const [pinStatus, setPinStatus] = useState<{ hasPin: boolean } | null>(null);
+  const [walletPin, setWalletPin] = useState('');
 
   const base = process.env.NEXT_PUBLIC_PAYMENT_API_URL?.replace(/\/$/, '');
 
@@ -414,7 +431,12 @@ function CheckoutClientContent() {
         }
 
         setInternalWallets(data);
-        const sufficientWallet = data.find((w: any) => w.balance >= (totalPreview ?? 0));
+        payFetch<{ hasPin: boolean }>('/api/wallet/pin/status')
+          .then(setPinStatus)
+          .catch(() => setPinStatus(null));
+        const sufficientWallet = data.find(
+          (w: any) => w.balance >= (totalPreview ?? 0) && !isOverMemberLimit(w, totalPreview ?? 0),
+        );
         if (sufficientWallet) {
           setSelectedWallet(sufficientWallet);
         }
@@ -446,12 +468,23 @@ function CheckoutClientContent() {
           provider: selectedMethod?.provider,
           paymentMethod: selectedMethod?.method,
           selectedWalletId: selectedWallet.id,
+          pin: walletPin || undefined,
         }),
       });
 
-      const payload: InitializePaymentResponse = await res.json();
+      const payload = (await res.json()) as InitializePaymentResponse & {
+        code?: string;
+        remainingAttempts?: number;
+      };
       if (!res.ok) {
-        throw new Error(payload.message || res.statusText || t.checkout.failedInitializePayment);
+        setWalletPin('');
+        const errors = t.wallet.errors as Record<string, string>;
+        const localized = payload.code ? errors[payload.code] : undefined;
+        throw new Error(
+          localized
+            ? format(localized, { n: payload.remainingAttempts ?? 0 })
+            : payload.message || res.statusText || t.checkout.failedInitializePayment,
+        );
       }
 
       setInternalLoading(false);
@@ -470,6 +503,13 @@ function CheckoutClientContent() {
   };
 
   const locale = lang === 'id' ? 'id-ID' : lang === 'en' ? 'en-US' : lang === 'zh' ? 'zh-CN' : lang === 'es' ? 'es-ES' : 'ar-SA';
+  // PIN wajib diisi kecuali status PIN tidak bisa dimuat (payment-service yang memutuskan).
+  const canConfirmWallet =
+    !!selectedWallet &&
+    !internalLoading &&
+    internalWallets.length > 0 &&
+    pinStatus?.hasPin !== false &&
+    (pinStatus === null || walletPin.length === 6);
 
   return (
     <main
@@ -841,7 +881,8 @@ function CheckoutClientContent() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '3px' }}>
                       {internalWallets.map((w) => {
-                        const insufficient = w.balance < (totalPreview ?? 0);
+                        const overLimit = isOverMemberLimit(w, totalPreview ?? 0);
+                        const insufficient = w.balance < (totalPreview ?? 0) || overLimit;
                         return (
                           <label
                             key={w.id}
@@ -860,9 +901,20 @@ function CheckoutClientContent() {
                             <span style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                               <strong style={{ color: '#e0e2e5', fontSize: '0.875rem' }}>{w.ownerName}</strong>
                               <span style={{ color: insufficient ? '#ff8a80' : '#8896a4', fontSize: '0.775rem' }}>
-                                {insufficient ? t.checkout.insufficientBalance : t.checkout.walletBalance}{' '}
+                                {overLimit
+                                  ? t.wallet.checkoutPin.overLimit
+                                  : insufficient
+                                    ? t.checkout.insufficientBalance
+                                    : t.checkout.walletBalance}{' '}
                                 {formatCurrency(w.balance, w.currency, locale)}
                               </span>
+                              {w.access === 'member' && w.monthlyRemaining != null && (
+                                <span style={{ color: '#8896a4', fontSize: '0.725rem' }}>
+                                  {format(t.wallet.checkoutPin.monthlyRemaining, {
+                                    amount: formatCurrency(w.monthlyRemaining, w.currency, locale),
+                                  })}
+                                </span>
+                              )}
                             </span>
                             <input
                               type="radio"
@@ -882,6 +934,57 @@ function CheckoutClientContent() {
                     </div>
                   )}
                 </div>
+
+                {internalWallets.length > 0 && pinStatus?.hasPin === false ? (
+                  <div style={{ display: 'grid', gap: '0.6rem' }}>
+                    <div style={{ fontSize: '0.825rem', color: '#8896a4' }}>{t.wallet.checkoutPin.createPinFirst}</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const back = `${window.location.pathname}${window.location.search}`;
+                        window.location.assign(`/wallet/pin?lang=${lang}&returnTo=${encodeURIComponent(back)}`);
+                      }}
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: '#e5a044',
+                        border: '1px solid #e5a044',
+                        padding: '0.7rem',
+                        borderRadius: '14px',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {t.wallet.checkoutPin.createPin}
+                    </button>
+                  </div>
+                ) : internalWallets.length > 0 ? (
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    <div style={{ fontSize: '0.825rem', color: '#8896a4', fontWeight: 600 }}>{t.wallet.checkoutPin.enterPin}</div>
+                    <PinInput value={walletPin} onChange={setWalletPin} ariaLabel={t.wallet.checkoutPin.enterPin} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const back = `${window.location.pathname}${window.location.search}`;
+                        window.location.assign(
+                          `/wallet/pin?lang=${lang}&mode=forgot&returnTo=${encodeURIComponent(back)}`,
+                        );
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#e5a044',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        justifySelf: 'start',
+                      }}
+                    >
+                      {t.wallet.checkoutPin.forgotPin}
+                    </button>
+                  </div>
+                ) : null}
 
                 <div style={{ display: 'flex', gap: '0.85rem', marginTop: '0.4rem' }}>
                   <button
@@ -904,16 +1007,16 @@ function CheckoutClientContent() {
                   </button>
                   <button
                     type="button"
-                    disabled={!selectedWallet || internalLoading || internalWallets.length === 0}
+                    disabled={!canConfirmWallet}
                     onClick={handleConfirmInternalPayment}
                     style={{
                       flex: 2,
-                      backgroundColor: selectedWallet && !internalLoading ? '#e5a044' : '#5c7e9a',
+                      backgroundColor: canConfirmWallet ? '#e5a044' : '#5c7e9a',
                       color: '#111',
                       border: 'none',
                       padding: '0.8rem',
                       borderRadius: '14px',
-                      cursor: selectedWallet && !internalLoading ? 'pointer' : 'not-allowed',
+                      cursor: canConfirmWallet ? 'pointer' : 'not-allowed',
                       fontWeight: 700,
                       fontSize: '0.875rem',
                     }}

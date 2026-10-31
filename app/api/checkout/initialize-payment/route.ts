@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  let body: { token?: string; provider?: string; paymentMethod?: string; selectedWalletId?: string; authToken?: string };
+  let body: { token?: string; provider?: string; paymentMethod?: string; selectedWalletId?: string; authToken?: string; pin?: string };
 
   try {
     body = await request.json();
@@ -23,6 +23,8 @@ export async function POST(request: NextRequest) {
   const provider = body.provider?.trim(); 
   const paymentMethod = body.paymentMethod?.trim();
   const selectedWalletId = body.selectedWalletId?.trim();
+  // PIN wallet pembeli (D14/D19) — hanya diteruskan, tidak pernah dicatat.
+  const pin = typeof body.pin === 'string' ? body.pin.trim() : undefined;
   const authToken =
     request.cookies.get('bagdja_auth_token')?.value ||
     request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
@@ -60,14 +62,21 @@ export async function POST(request: NextRequest) {
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ token, provider, paymentMethod, selectedWalletId }),
+        body: JSON.stringify({ token, provider, paymentMethod, selectedWalletId, pin }),
       },
     );
 
     const initJson = await initResponse.json();
     if (!initResponse.ok) {
+      // Teruskan `code` & `remainingAttempts` (error PIN) selain pesan.
       return NextResponse.json(
-        { message: initJson.message || 'Failed to initialize payment' },
+        {
+          message: initJson.message || 'Failed to initialize payment',
+          ...(initJson.code ? { code: initJson.code } : {}),
+          ...(initJson.remainingAttempts !== undefined
+            ? { remainingAttempts: initJson.remainingAttempts }
+            : {}),
+        },
         { status: initResponse.status },
       );
     }
