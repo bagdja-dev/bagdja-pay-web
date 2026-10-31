@@ -90,20 +90,25 @@ export function localeOf(lang: string): string {
   return lang === 'id' ? 'id-ID' : lang === 'en' ? 'en-US' : lang === 'zh' ? 'zh-CN' : lang === 'es' ? 'es-ES' : 'ar-SA';
 }
 
-/** Halaman login Bagdja; setelah login kembali ke URL saat ini dengan `?auth_token=`. */
+/**
+ * Halaman login Bagdja. login.bagdja.com membaca `redirect_url` dan setelah
+ * login kembali ke URL itu dengan token di `?token=`.
+ */
 export function redirectToLogin(): void {
   const loginUrl = process.env.NEXT_PUBLIC_LOGIN_URL?.replace(/\/$/, '') || 'http://localhost:4003';
-  window.location.href = `${loginUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+  window.location.href = `${loginUrl}/login?redirect_url=${encodeURIComponent(window.location.href)}`;
 }
 
 /**
- * Ambil `auth_token` dari URL (redirect login), tukar jadi cookie HttpOnly,
- * lalu hapus dari URL & riwayat browser. Mengembalikan true bila ada token.
+ * Ambil token dari URL redirect login (`?token=`, atau `?auth_token=` untuk
+ * pemanggil lama), tukar jadi cookie HttpOnly, lalu hapus dari URL & riwayat
+ * browser. Mengembalikan true bila ada token.
  */
 export async function adoptLoginToken(): Promise<boolean> {
   const url = new URL(window.location.href);
-  const authToken = url.searchParams.get('auth_token')?.trim();
+  const authToken = (url.searchParams.get('token') || url.searchParams.get('auth_token'))?.trim();
   if (!authToken) return false;
+  url.searchParams.delete('token');
   url.searchParams.delete('auth_token');
   window.history.replaceState({}, '', `${url.pathname}${url.search}`);
   await payFetch('/api/auth/session', { method: 'POST', body: { authToken } });
