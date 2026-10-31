@@ -846,7 +846,7 @@ function CheckoutClientContent() {
                   type="button"
                   onClick={() => {
                     const loginUrl = process.env.NEXT_PUBLIC_LOGIN_URL?.replace(/\/$/, '') || 'http://localhost:4003';
-                    window.location.href = `${loginUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+                    window.location.href = `${loginUrl}/login?redirect_url=${encodeURIComponent(window.location.href)}`;
                   }}
                   style={{
                     backgroundColor: '#e5a044',
